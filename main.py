@@ -1,110 +1,166 @@
-import os
-import hashlib
-import threading
-import time
-from datetime import datetime
-import re
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, Signal, Slot, Property, QUrl, QThread, QMutex, QMetaObject, Qt, Q_ARG
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Signal, Slot, QThread
+import hashlib
+import sys
+import os
+import re
+import datetime
+import time
+
+def clean_filename(filename):
+    """
+    Clean the filename to remove/replace unsafe ASCII special characters.
+    Non-alphanumeric characters are replaced with underscores, except dashes and dots.
+    """
+    return re.sub(r'[^\w\.-]', lambda m: f"_{ord(m.group(0))}_", filename)
 
 
-def safe_filename(filename):
-    return re.sub(r'[^\w.-]', lambda x: f'_{ord(x.group(0))}_', filename)
+class HashWorker(QObject):
+    hashCalculated = Signal(str)
+    errorOccurred = Signal(str)
+    progressChanged = Signal(float)
 
-
-class HashWorker(QThread):
-    hash_ready = Signal(str)
-
-    def __init__(self, path):
+    def __init__(self):
         super().__init__()
-        self.path = path
-        self._is_running = True
-
-    def run(self):
-        try:
-            with open(self.path, "rb") as f:
-                md5 = hashlib.md5()
-                while chunk := f.read(8192):
-                    if not self._is_running:
-                        return
-                    md5.update(chunk)
-                self.hash_ready.emit(md5.hexdigest())
-        except Exception as e:
-            self.hash_ready.emit(f"Error: {str(e)}")
-
-    def stop(self):
-        self._is_running = False
-
-
-        class Backend(QObject):
-            hashReady = Signal(str)
-
-            def __init__(self):
-                super().__init__()
-                self.hash_value = ""
-                self._is_running = False
-                self.worker_thread = None
-                self.hashed_file_name = ""
-
-            def startHash(self, file_path):
-                self._is_running = True
-                self.hash_value = ""
-                self.hashed_file_name = os.path.basename(file_path)
-                self.worker_thread = threading.Thread(target=self._calculate_hash, args=(file_path,))
-                self.worker_thread.start()
-
-            def _calculate_hash(self, file_path):
-                try:
-                    hasher = hashlib.md5()
-                    with open(file_path, 'rb') as f:
-                        while True:
-                            if not self._is_running:
-                                return
-                            chunk = f.read(8192)
-                            if not chunk:
-                                break
-                            hasher.update(chunk)
-                    self.hash_value = hasher.hexdigest()
-                    self.hashReady.emit(self.hash_value)
-                except Exception as e:
-                    self.hash_value = f"Error: {str(e)}"
-                    self.hashReady.emit(self.hash_value)
-
-    @Slot()
-    def cancelHash(self):
-        if self.worker:
-            self.worker.stop()
-
-    def send_hash(self, hash_value):
-        self.hash_result = hash_value
-        self.hashReady.emit(hash_value)
+        self._mutex = QMutex()
+        self._should_cancel = False
 
     @Slot(str)
+    def calculate_hash(self, file_path):
+        try:
+            self._mutex.lock()
+            self._should_cancel = False
+            self._mutex.unlock()
+
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
+
+            file_size = os.path.getsize(file_path)
+            processed = 0
+            hasher = hashlib.sha256()
+
+            with open(file_path, "rb") as f:
+                while True:
+                    self._mutex.lock()
+                    if self._should_cancel:
+                        self._mutex.unlock()
+                        return
+                    self._mutex.unlock()
+
+                    chunk = f.read(65536)  # 64KB chunks
+                    if not chunk:
+                        break
+
+                    hasher.update(chunk)
+                    processed += len(chunk)
+                    self.progressChanged.emit(processed / file_size * 100)
+
+            self.hashCalculated.emit(hasher.hexdigest())
+
+        except Exception as e:
+            self.errorOccurred.emit(f"Error: {str(e)}")
+
+    @Slot()
+    def cancel(self):
+        self._mutex.lock()
+        self._should_cancel = True
+        self._mutex.unlock()
+
+
+class Backend(QObject):
+    hashChanged = Signal(str)
+    errorOccurred = Signal(str)
+    progressChanged = Signal(float)
+    operationCancelled = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._hash_value = ""
+        self._worker_thread = QThread()
+        self._worker = HashWorker()
+        self._worker.moveToThread(self._worker_thread)
+
+        # Connect worker signals
+        self._worker.hashCalculated.connect(self._on_hash_calculated)
+        self._worker.errorOccurred.connect(self.errorOccurred)
+        self._worker.progressChanged.connect(self.progressChanged)
+
+        self._worker_thread.start()
+
+    @Property(str, notify=hashChanged)
+    def hash_value(self):
+        return self._hash_value
+
+    @Slot(str)
+    def startHash(self, file_url):
+        file_path = QUrl(file_url).toLocalFile()
+        if file_path:
+            self._original_filename = os.path.basename(file_path)
+            self._safe_filename = clean_filename(self._original_filename)
+            QMetaObject.invokeMethod(
+                self._worker,
+                "calculate_hash",
+                Qt.QueuedConnection,
+                Q_ARG(str, file_path)
+            )
+        else:
+            self.errorOccurred.emit("Invalid file path")
+
+    @Slot()
+    def cancelOperation(self):
+        QMetaObject.invokeMethod(self._worker, "cancel", Qt.QueuedConnection)
+        self.operationCancelled.emit()
+
+    def _on_hash_calculated(self, hash_value):
+        self._hash_value = hash_value
+        self.hashChanged.emit(hash_value)
+
+    @Slot()
     def saveHash(self):
-        if self.hash_value:
-            # Create the folder inside ~/Documents/HASHoutputs
-            documents_dir = os.path.expanduser("~/Documents")
-            output_dir = os.path.join(documents_dir, "HASHoutputs")
-            os.makedirs(output_dir, exist_ok=True)
 
-            # Clean and shorten filename
-            safe_filename = "HASHof" + self.hashed_file_name[:10].replace(" ", "_").replace("'", "").replace("\"", "")
-            # Get timestamp
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if self._hash_value:
+            try:
+                print("gthhy")
+                folder_name = "HAHSOutput"
+                hashfile_name = f"HASHof{self._safe_filename[:10]}.txt"
+                file_content = f"Hello there! HASHer says HASH of {self._original_filename} is {self._hash_value}.\n\nThis operation took {operation_time} seconds."
+                current_dir = os.getcwd()
+                folder_path = os.path.join(current_dir, folder_name)
+                os.makedirs(folder_path, exist_ok=True)
+                hashfile_path = os.path.join(folder_path, hashfile_name)
 
-            # Full save path
-            save_path = os.path.join(output_dir, f"{safe_filename}.txt")
+                with open(hashfile_path, "w", encoding="utf-8") as f:
+                    f.write(file_content)
 
-            with open(save_path, 'w') as f:
-                f.write(f"Hello there! HASHer says HASH of {self.hashed_file_name} is {self.hash_value} at {timestamp}")
+                self.errorOccurred.emit(f"Hash saved to: {folder_path}")
+
+            except Exception as e:
+                self.errorOccurred.emit(f"Save failed: {str(e)}")
+        else:
+            self.errorOccurred.emit("No hash to save")
+
+    def __del__(self):
+        self._worker_thread.quit()
+        self._worker_thread.wait()
+
+
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    start_time = datetime.datetime.now()
+    app = QGuiApplication(sys.argv)
     engine = QQmlApplicationEngine()
+
     backend = Backend()
     engine.rootContext().setContextProperty("backend", backend)
+
     engine.load("main.qml")
+
+    end_time = datetime.datetime.now()
+    operation_time = end_time - start_time
+
     if not engine.rootObjects():
         sys.exit(-1)
+
     sys.exit(app.exec())
+
