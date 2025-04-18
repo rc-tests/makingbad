@@ -22,10 +22,15 @@ ApplicationWindow {
         Text {
             id: dropText
             anchors.centerIn: parent
-            text: "Drop file here to calculate SHA-256 hash"
+            text: "Drop file here to calculate hash"
             font.bold: true
             font.pixelSize: 16
             color: "#495057"
+        }
+
+        Button {
+            text: "Exit"
+            onClicked: Qt.quit()
         }
 
         DropArea {
@@ -45,8 +50,20 @@ ApplicationWindow {
                     cancelButton.visible = true
                 }
             }
+    }
+
+    ComboBox {
+        id: hashDropdown
+        width: 200
+        model: ["SHA-256", "MD5", "SHA-1", "SHA-512", "BLAKE2b"]
+        currentIndex: 0
+        anchors.top: dropArea.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        onCurrentTextChanged: {
+            backend.setAlgorithm(currentText)
         }
     }
+
 
     BusyIndicator {
         id: progress
@@ -162,8 +179,9 @@ ApplicationWindow {
         id: errorTimer
         interval: 5000
         onTriggered: {
-            dropText.text = "Drop file here to calculate SHA-256 hash"
+            dropText.text = "Drop file here to hash"
             dropArea.border.color = "#6c757d"
         }
     }
+}
 }

@@ -9,10 +9,7 @@ import datetime
 import time
 
 def clean_filename(filename):
-    """
-    Clean the filename to remove/replace unsafe ASCII special characters.
-    Non-alphanumeric characters are replaced with underscores, except dashes and dots.
-    """
+
     return re.sub(r'[^\w\.-]', lambda m: f"_{ord(m.group(0))}_", filename)
 
 
@@ -26,8 +23,12 @@ class HashWorker(QObject):
         self._mutex = QMutex()
         self._should_cancel = False
 
+
+
     @Slot(str)
-    def calculate_hash(self, file_path):
+    def calculate_hash(self, file_path, hasher):
+        print("working")
+
         try:
             self._mutex.lock()
             self._should_cancel = False
@@ -38,7 +39,6 @@ class HashWorker(QObject):
 
             file_size = os.path.getsize(file_path)
             processed = 0
-            hasher = hashlib.sha256()
 
             with open(file_path, "rb") as f:
                 while True:
@@ -48,15 +48,15 @@ class HashWorker(QObject):
                         return
                     self._mutex.unlock()
 
-                    chunk = f.read(65536)  # 64KB chunks
-                    if not chunk:
+                    chunk = f.read(4096)  # 64KB chunks
+                    if chunk:
                         break
 
-                    hasher.update(chunk)
+                    myHashAlgorithm.update(chunk)
+
                     processed += len(chunk)
                     self.progressChanged.emit(processed / file_size * 100)
-
-            self.hashCalculated.emit(hasher.hexdigest())
+            self.hashCalculated.emit(myHashAlgorithm.hexdigest())
 
         except Exception as e:
             self.errorOccurred.emit(f"Error: {str(e)}")
@@ -93,8 +93,31 @@ class Backend(QObject):
         return self._hash_value
 
     @Slot(str)
+    def setAlgorithm(self, algorithm):
+        print(f"User selected algorithm: {algorithm}")
+
+        try:
+            if algorithm == "SHA-256":
+                hasher = hashlib.sha256()
+            elif algorithm == "MD5":
+                hasher = hashlib.md5()
+            elif algorithm == "SHA-1":
+                hasher = hashlib.sha1()
+            elif algorithm == "SHA-512":
+                hasher = hashlib.sha512()
+            elif algorithm == "BLAKE2b":
+                hasher = hashlib.blake2b()
+            else:
+                raise ValueError("Unsupported algorithm selected.")
+        except Exception as e:
+            self.errorOccurred.emit(f"Error: {str(e)}")
+
+        self._selected_algorithm = hasher
+        return hasher
+    @Slot(str)
     def startHash(self, file_url):
         file_path = QUrl(file_url).toLocalFile()
+        self._selected_algorithm =
         if file_path:
             self._original_filename = os.path.basename(file_path)
             self._safe_filename = clean_filename(self._original_filename)
@@ -102,7 +125,8 @@ class Backend(QObject):
                 self._worker,
                 "calculate_hash",
                 Qt.QueuedConnection,
-                Q_ARG(str, file_path)
+                Q_ARG(str, file_path),
+                Q_ARG(str, setAlgorithm)
             )
         else:
             self.errorOccurred.emit("Invalid file path")
@@ -121,10 +145,10 @@ class Backend(QObject):
 
         if self._hash_value:
             try:
-                print("gthhy")
+                print("Initiating save")
                 folder_name = "HAHSOutput"
                 hashfile_name = f"HASHof{self._safe_filename[:10]}.txt"
-                file_content = f"Hello there! HASHer says HASH of {self._original_filename} is {self._hash_value}.\n\nThis operation took {operation_time} seconds."
+                file_content = f"Hello there! HASHer says {algo} HASH of {self._original_filename} is {self._hash_value}.\n\nThis operation took {operation_time} seconds."
                 current_dir = os.getcwd()
                 folder_path = os.path.join(current_dir, folder_name)
                 os.makedirs(folder_path, exist_ok=True)
