@@ -6,7 +6,7 @@ ApplicationWindow {
     visible: true
     width: 600
     height: 400
-    title: "HASHer - Threaded File Hash Calculator"
+    title: "HASHer - File Hash Calculator"
 
     Rectangle {
         id: dropArea
@@ -18,6 +18,17 @@ ApplicationWindow {
         radius: 10
         anchors.centerIn: parent
         visible: true
+
+    ComboBox {
+        id: hashDropdown
+        width: 200
+        model: ["SHA-256", "MD5", "SHA-1", "SHA-512"]
+        currentIndex: 0
+        anchors.top: dropArea.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        onCurrentTextChanged: {
+        backend.setAlgorithm(currentText)
+        }
 
         Text {
             id: dropText
@@ -41,7 +52,7 @@ ApplicationWindow {
             }
             onExited: {
                 dropArea.border.color = "#6c757d"
-                dropText.text = "Drop file here to calculate SHA-256 hash"
+                dropText.text = "Drop file here to calculate hash"
             }
             onDropped: (drop) => {
                 if (drop.hasUrls && drop.urls.length > 0) {
@@ -51,17 +62,6 @@ ApplicationWindow {
                 }
             }
     }
-
-    ComboBox {
-        id: hashDropdown
-        width: 200
-        model: ["SHA-256", "MD5", "SHA-1", "SHA-512", "BLAKE2b"]
-        currentIndex: 0
-        anchors.top: dropArea.bottom
-        anchors.horizontalCenter: parent.horizontalCenter
-        onCurrentTextChanged: {
-            backend.setAlgorithm(currentText)
-        }
     }
 
 
@@ -109,7 +109,7 @@ ApplicationWindow {
 
             Text {
                 id: hashLabel
-                text: "SHA-256 Hash: " + backend.hash_value
+                text: "HASH of your file: " + backend.hash_value
                 font.bold: true
                 font.pixelSize: 14
                 Layout.alignment: Qt.AlignHCenter
@@ -126,11 +126,11 @@ ApplicationWindow {
                 spacing: 20
 
                 Button {
-                    text: "Calculate Another"
+                    text: "Restart"
                     onClicked: {
                         resultPage.visible = false
                         dropArea.visible = true
-                        dropText.text = "Drop file here to calculate SHA-256 hash"
+                        dropText.text = "Drop file here to calculate hash"
                     }
                 }
 
