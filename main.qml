@@ -19,16 +19,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         visible: true
 
-    ComboBox {
-        id: hashDropdown
-        width: 200
-        model: ["SHA-256", "MD5", "SHA-1", "SHA-512"]
-        currentIndex: 0
-        anchors.top: dropArea.bottom
-        anchors.horizontalCenter: parent.horizontalCenter
-        onCurrentTextChanged: {
-        backend.setAlgorithm(currentText)
-        }
+   
 
         Text {
             id: dropText
@@ -39,10 +30,8 @@ ApplicationWindow {
             color: "#495057"
         }
 
-        Button {
-            text: "Exit"
-            onClicked: Qt.quit()
         }
+        
 
         DropArea {
             anchors.fill: parent
@@ -61,9 +50,27 @@ ApplicationWindow {
                     cancelButton.visible = true
                 }
             }
-    }
-    }
+        }
 
+    ComboBox {
+        id: hashDropdown
+        width: 200
+        model: ["SHA-256", "MD5", "SHA-1", "SHA-512"]
+        currentIndex: 0
+        anchors.top: dropArea.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        onCurrentTextChanged: {
+        backend.setAlgorithm(currentText)
+        }
+    }  
+
+    
+    Button {
+        text: "Exit"
+        anchors.bottom: ComboBox.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        onClicked: Qt.quit()
+    }
 
     BusyIndicator {
         id: progress
@@ -85,9 +92,7 @@ ApplicationWindow {
     Button {
         id: cancelButton
         text: "Cancel"
-        anchors.top: progressBar.bottom
-        anchors.horizontalCenter: parent.horizontalCenter
-        visible: false
+        visible: false 
         onClicked: {
             backend.cancelOperation()
             progress.visible = false
@@ -177,11 +182,10 @@ ApplicationWindow {
 
     Timer {
         id: errorTimer
-        interval: 5000
+        interval: 60000
         onTriggered: {
             dropText.text = "Drop file here to hash"
             dropArea.border.color = "#6c757d"
         }
     }
-}
 }

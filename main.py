@@ -26,7 +26,8 @@ class HashWorker(QObject):
 
     @Slot(str)
     def calculate_hash(self, file_path, myHashAlgorithm):
-        print("working")
+        
+        print("calculate_hash is called")
 
         try:
             self._mutex.lock()
@@ -39,7 +40,10 @@ class HashWorker(QObject):
             file_size = os.path.getsize(file_path)
             processed = 0
 
+            hasher = getattr(hashlib, myHashAlgorithm)()
+
             with open(file_path, "rb") as f:
+                print("File is opened")
                 while True:
                     self._mutex.lock()
                     if self._should_cancel:
@@ -48,14 +52,16 @@ class HashWorker(QObject):
                     self._mutex.unlock()
 
                     chunk = f.read(4096) 
-                    if chunk:
-                        myHashAlgorithm.update(chunk)
-                        myHashAlgorithm.hexdigest()
+                    if not chunk:
+                        break
+                    print("File is read")
+                    hasher.update(chunk)
 
                     processed += len(chunk)
                     self.progressChanged.emit(processed / file_size * 100)
-            self.hashCalculated.emit()
 
+                self.hashCalculated.emit(hasher.hexdigest())
+                print("hash sent to hashCalculated")
         except Exception as e:
             self.errorOccurred.emit(f"Error: {str(e)}")
 
@@ -71,6 +77,7 @@ class Backend(QObject):
     errorOccurred = Signal(str)
     progressChanged = Signal(float)
     operationCancelled = Signal()
+    startHashSignal = Signal(str, str)
 
     def __init__(self):
         super().__init__()
@@ -78,9 +85,13 @@ class Backend(QObject):
         self._worker_thread = QThread()
         self._worker = HashWorker()
         self._worker.moveToThread(self._worker_thread)
-        self._selected_algorithm = ""
-       
+        self._selected_algorithm = "sha256"
+        self.startHashSignal.connect(self._worker.calculate_hash)
+
         self._worker.hashCalculated.connect(self._on_hash_calculated)
+        if ConnectionError:
+            print("hashCalculated not sent to _on_hash_calculated")
+            
         self._worker.errorOccurred.connect(self.errorOccurred)
         self._worker.progressChanged.connect(self.progressChanged)
 
@@ -96,35 +107,30 @@ class Backend(QObject):
 
         try:
             if algorithm == "SHA-256":
-                hasher = hashlib.sha256()
+                self._selected_algorithm = hashlib.sha256()
             elif algorithm == "MD5":
-                hasher = hashlib.md5()
+                self._selected_algorithm = hashlib.md5()
             elif algorithm == "SHA-1":
-                hasher = hashlib.sha1()
+                self._selected_algorithm = hashlib.sha1()
             elif algorithm == "SHA-512":
-                hasher = hashlib.sha512()
+                self._selected_algorithm = hashlib.sha512()
             else:
                 raise ValueError("Unsupported algorithm selected.")
         except Exception as e:
             self.errorOccurred.emit(f"Error: {str(e)}")
-
-        self._selected_algorithm = hasher
         
     
     @Slot(str)
     def startHash(self, file_url):
         file_path = QUrl(file_url).toLocalFile()
-        
-        if file_path:
+        print("startHash is called")
+        if file_path and hasattr(self, "_selected_algorithm"):
             self._original_filename = os.path.basename(file_path)
             self._safe_filename = clean_filename(self._original_filename)
-            QMetaObject.invokeMethod(
-                self._worker,
-                "calculate_hash",
-                Qt.QueuedConnection,
-                Q_ARG(str, file_path),
-                Q_ARG(str, self._selected_algorithm)
-            )
+            algorithm_name = self._selected_algorithm
+
+            self.startHashSignal.emit(file_path, algorithm_name)
+
         else:
             self.errorOccurred.emit("Invalid file path")
 
@@ -134,6 +140,7 @@ class Backend(QObject):
         self.operationCancelled.emit()
 
     def _on_hash_calculated(self, hash_value):
+        print("_on_hash_calculated is called")
         self._hash_value = hash_value
         self.hashChanged.emit(hash_value)
 
