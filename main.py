@@ -60,9 +60,9 @@ class HashWorker(QObject):
 
                     processed += len(chunk)
                     self.progressChanged.emit(processed / file_size * 100)
-
-                self.hashCalculated.emit(hasher.hexdigest())
                 print("hash sent to hashCalculated")
+                self.hashCalculated.emit(hasher.hexdigest())
+                
         except Exception as e:
             self.errorOccurred.emit(f"Error N: {str(e)}")
 
@@ -87,13 +87,9 @@ class Backend(QObject):
         self._worker = HashWorker()
         self._worker.moveToThread(self._worker_thread)
         self._selected_algorithm = "sha256"
-        # self.startHashSignal.connect(self._worker.calculate_hash)
-        # if ConnectionError:
-        #     print("gg")
-        self._worker.hashCalculated.connect(self._on_hash_calculated)
-        # if ConnectionError:
-        #     print("hashCalculated not sent to _on_hash_calculated")
-            
+        if ConnectionError:
+            print(ConnectionError)
+        self._worker.hashCalculated.connect(self._on_hash_calculated)     
         self._worker.errorOccurred.connect(self.errorOccurred)
         self._worker.progressChanged.connect(self.progressChanged)
 
@@ -153,7 +149,7 @@ class Backend(QObject):
         if self._hash_value:
             try:
                 print("Initiating save")
-                folder_name = "HAHSOutput"
+                folder_name = "HASHOutput"
                 hashfile_name = f"HASHof{self._safe_filename[:10]}.txt"
                 file_content = f"Hello there! HASHer says {self._selected_algorithm} HASH of {self._original_filename} is {self._hash_value}.\n\nThis operation took {operation_time} seconds."
                 current_dir = os.getcwd()
