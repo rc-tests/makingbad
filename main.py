@@ -24,7 +24,7 @@ class HashWorker(QObject):
 
 
 
-    @Slot(str)
+    @Slot(str, str)
     def calculate_hash(self, file_path, myHashAlgorithm):
         
         print("calculate_hash is called")
@@ -40,6 +40,7 @@ class HashWorker(QObject):
             file_size = os.path.getsize(file_path)
             processed = 0
 
+            #hasher = getattr(hashlib, myHashAlgorithm)()
             hasher = getattr(hashlib, myHashAlgorithm)()
 
             with open(file_path, "rb") as f:
@@ -63,7 +64,7 @@ class HashWorker(QObject):
                 self.hashCalculated.emit(hasher.hexdigest())
                 print("hash sent to hashCalculated")
         except Exception as e:
-            self.errorOccurred.emit(f"Error: {str(e)}")
+            self.errorOccurred.emit(f"Error N: {str(e)}")
 
     @Slot()
     def cancel(self):
@@ -86,11 +87,12 @@ class Backend(QObject):
         self._worker = HashWorker()
         self._worker.moveToThread(self._worker_thread)
         self._selected_algorithm = "sha256"
-        self.startHashSignal.connect(self._worker.calculate_hash)
-
+        # self.startHashSignal.connect(self._worker.calculate_hash)
+        # if ConnectionError:
+        #     print("gg")
         self._worker.hashCalculated.connect(self._on_hash_calculated)
-        if ConnectionError:
-            print("hashCalculated not sent to _on_hash_calculated")
+        # if ConnectionError:
+        #     print("hashCalculated not sent to _on_hash_calculated")
             
         self._worker.errorOccurred.connect(self.errorOccurred)
         self._worker.progressChanged.connect(self.progressChanged)
@@ -107,13 +109,13 @@ class Backend(QObject):
 
         try:
             if algorithm == "SHA-256":
-                self._selected_algorithm = hashlib.sha256()
+                self._selected_algorithm ="sha256" #hashlib.sha256()
             elif algorithm == "MD5":
-                self._selected_algorithm = hashlib.md5()
+                self._selected_algorithm = "md5" # hashlib.md5()
             elif algorithm == "SHA-1":
-                self._selected_algorithm = hashlib.sha1()
+                self._selected_algorithm = "sha1" #hashlib.sha1()
             elif algorithm == "SHA-512":
-                self._selected_algorithm = hashlib.sha512()
+                self._selected_algorithm = "sha512" #hashlib.sha512()
             else:
                 raise ValueError("Unsupported algorithm selected.")
         except Exception as e:
@@ -129,7 +131,8 @@ class Backend(QObject):
             self._safe_filename = clean_filename(self._original_filename)
             algorithm_name = self._selected_algorithm
 
-            self.startHashSignal.emit(file_path, algorithm_name)
+            #self.startHashSignal.emit(file_path, algorithm_name)
+            self._worker.calculate_hash(file_path, algorithm_name)
 
         else:
             self.errorOccurred.emit("Invalid file path")
